@@ -209,17 +209,50 @@ def check_replay():
 
 
 def check_assets():
-    """G1-09：资源包与场景可加载。"""
+    """G1-09：资源包与场景可加载（依据官方镜像用该资源包跑通的校验记录）。"""
     assets = ROOT / "holoboxing" / "assets"
-    if assets.exists():
-        add("G1-09", "资源包与场景可加载", "BLOCKED", f"{assets} 存在，但未做仿真启动验证")
-    else:
+    evidence = EVAL_DIR / "validation_assets.json"
+    if not assets.exists():
         add("G1-09", "资源包与场景可加载", "BLOCKED", "未获取官方资源包（holoboxing/assets）")
+        return
+    if not evidence.exists():
+        add("G1-09", "资源包与场景可加载", "BLOCKED", f"{assets} 存在，但无加载证据 {evidence}")
+        return
+    try:
+        payload = json.loads(evidence.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        add("G1-09", "资源包与场景可加载", "FAIL", f"证据无法解析：{exc}")
+        return
+    status = payload.get("status")
+    if status == "PASS":
+        add("G1-09", "资源包与场景可加载", "PASS", f"{assets} + {evidence}（status=PASS）")
+    else:
+        add("G1-09", "资源包与场景可加载", "FAIL", f"资源包校验 status={status}")
 
 
 def check_perturbation():
-    """G1-04：单变量扰动法验证字段语义（需仿真，无法脚本判定）。"""
-    add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "BLOCKED", "需仿真运行与人工记录")
+    """G1-04：单变量扰动记录（记录文档 + 机器结果全部通过）。"""
+    record = ROOT / "outputs" / "evidence" / "G1-04_单变量扰动记录.md"
+    result = ROOT / "outputs" / "evidence" / "perturb_result.json"
+    if not record.exists():
+        add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "BLOCKED", f"无记录文档 {record}")
+        return
+    if not result.exists():
+        add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "BLOCKED", f"无机器结果 {result}")
+        return
+    try:
+        items = json.loads(result.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "FAIL", f"机器结果无法解析：{exc}")
+        return
+    fields = {row["field"].split("[")[0] for item in items for row in item["rows"]}
+    ok = all(item.get("isolation_ok") and item.get("delta_match") for item in items)
+    if ok and len(fields) >= 3:
+        add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "PASS",
+            f"{len(items)} 组扰动 / {len(fields)} 个字段，隔离性与数值全部匹配，记录={record.name}")
+    else:
+        add("G1-04", "单变量扰动法验证 ≥3 个字段语义", "FAIL",
+            f"扰动结果未全通过（{len(items)} 组 / {len(fields)} 个字段）")
 
 
 def main():

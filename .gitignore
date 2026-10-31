@@ -14,7 +14,7 @@ outputs/
 *.log
 
 # 官方代码与资源包（只读，按官方入口获取）
-holoboxing/
+holoboxing
 assets/
 
 # 模型权重与导出文件（按版本单独归档，不入库）
