@@ -1,15 +1,44 @@
 # 编辑器/工具缓存
 .screenshots/
+.idea/
+.vscode/
 
-# Python 缓存
+# Python 环境与缓存
 __pycache__/
 *.py[cod]
+.venv/
+venv/
 
-# 评测/训练/回放产物（可重新生成，不入库）
+# 评测/训练/回放产物（可重新生成）
 outputs/
+*.log
 
-# 官方代码与资源包（只读，按官方入口获取，不入库）
+# 官方代码与资源包（只读，按官方入口获取）
 holoboxing/
+assets/
 
-# 导出的 ONNX 模型按版本管理，不入库
-models/*.onnx
+# 模型权重与导出文件（按版本单独归档，不入库）
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# 数据集与轨迹文件（体积大，按需下载）
+data/
+datasets/
+*.hdf5
+*.h5
+*.mcap
+*.lmdb
+
+# 镜像离线包（常超 100MB，GitHub 单文件拒收）
+*.tar
+*.tar.gz
+*.tgz
+
+# 凭据与本地配置
+.env
+.env.*
+*.pem
+*.key
