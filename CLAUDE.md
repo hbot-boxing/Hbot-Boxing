@@ -122,6 +122,26 @@
 - CET-4 备考中（约 2 个月后考试），可用学习时间有限
 - 偏好使用 Linux 原生工具和浏览器 Web 应用
 
+### 5.3 团队分工与阶段进度
+
+分工（2026-11-03 起）：
+
+- **角色 A（策略与调参）**：改模型、改奖励、跑长训练（如 200 次更新）。本侧不跟进训练任务。
+- **角色 B（评测与端侧工程，当前角色）**：ONNX 导出与校验、耗时测试、HDF5 回放录像、门禁脚本 `tools/verify_phase{N}.py`。
+
+进度：
+
+- 阶段一、阶段二：`verify_phase1.py` / `verify_phase2.py` 全 PASS。
+- 阶段三：G3-01/02/03/04/05/06/08/09 PASS；G3-07（镜像内 ≥10 局对战）BLOCKED。
+
+已知环境约束：
+
+- 本机 15,694MB 内存 + 2GB swap（常满），官方镜像的 `--benchmark` 与 `--match` 均 OOM（rc=137）；测速改在宿主机 venv 调官方 `chain_benchmark.benchmark_model`。
+- 跑镜像时建议 `-e WARP_CACHE_PATH=/wp_cache` 并挂入 `~/.cache/warp/1.11.0`，否则容器内重新编译 warp 内核，内存峰值叠加。
+- `scripts/train_env.sh` 必须 `source`（进程启动前生效，含 MALLOC 三个变量与 PYTHONPATH）。
+- 官方镜像无 torch；宿主机 venv 有 torch / onnx / onnxruntime。
+- 回放 MP4 只能在浏览器端导出（需 localhost/HTTPS），镜像无 headless 转换。
+
 ---
 
 ## 六、自主更新机制
@@ -165,3 +185,4 @@
 | 2026-10-30 | 加入阶段审查文档与阶段文档引用；阶段审查文档为契约权威来源 |
 | 2026-10-30 | 阶段审查文档新增第四章「独立检验入口」（门禁 43 条）；阶段文档补齐 `verify_phase{N}.py`；关键约束增加三态验收规则 |
 | 2026-10-30 | 移到仓库根 `CLAUDE.md` 以便 Trae 自动加载；引用规则改为一律 `file:///`、禁用 `computer://`；新增 3.4 变更审批（禁止随意修改文档或代码，一切须经用户同意） |
+| 2026-11-03 | 新增 5.3 团队分工（A 策略调参 / B 评测与端侧）、阶段一~三进度、已知环境约束（16GB 内存 OOM、warp 缓存挂载、`train_env.sh` 需 source、镜像无 torch、MP4 仅浏览器端导出） |
