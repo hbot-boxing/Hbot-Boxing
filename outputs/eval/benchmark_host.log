@@ -1,0 +1,63 @@
+Warp 1.11.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.0
+   Devices:
+     "cpu"      : "x86_64"
+     "cuda:0"   : "NVIDIA GeForce RTX 4060 Laptop GPU" (8 GiB, sm_89, mempool enabled)
+   Kernel cache:
+     /home/yjh/.cache/warp/1.11.0
+{
+ "version": "upper_lower_completed_mean5ms_v1",
+ "scope": "single_fighter_upper_observation_inference_decode_lower_observation_inference_cache_target; excludes_output_sanitization_and_physics",
+ "warmup": 10,
+ "iterations": 100,
+ "mean_ms": 4.12907108,
+ "p50_ms": 4.0786435,
+ "p95_ms": 4.7629567999999995,
+ "p99_ms": 5.13552363,
+ "maximum_ms": 5.239041,
+ "sanitizer_mean_ms": 0.33381816000000003,
+ "threshold_ms": 5.0,
+ "criterion": "mean_ms <= 5.0; individual tails are diagnostic",
+ "passed": true,
+ "timing_completed": true,
+ "fps": 242.18522292912428,
+ "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+ "torch_version": "2.14.1+cu126",
+ "cuda_version": "12.6",
+ "onnxruntime_version": "1.22.0",
+ "gpu_telemetry_before": {
+  "fields": "index,uuid,name,driver_version,pstate,utilization.gpu,memory.used,memory.total,clocks.current.sm,clocks.current.memory,power.draw",
+  "rows": [
+   "0, GPU-c45800f1-fdea-35e4-f296-b48fc3c2a9bd, NVIDIA GeForce RTX 4060 Laptop GPU, 580.178.04, P0, 21, 2420, 8188, 2625, 8001, 18.15"
+  ],
+  "units": "utilization percent; memory MiB; clocks MHz; power W"
+ },
+ "gpu_telemetry_after": {
+  "fields": "index,uuid,name,driver_version,pstate,utilization.gpu,memory.used,memory.total,clocks.current.sm,clocks.current.memory,power.draw",
+  "rows": [
+   "0, GPU-c45800f1-fdea-35e4-f296-b48fc3c2a9bd, NVIDIA GeForce RTX 4060 Laptop GPU, 580.178.04, P0, 54, 2420, 8188, 2625, 8001, 22.17"
+  ],
+  "units": "utilization percent; memory MiB; clocks MHz; power W"
+ },
+ "parity_preflight": {
+  "steps": 5,
+  "observation_atol": 3e-05,
+  "observation_rtol": 3e-05,
+  "action_and_cache_atol": 1e-06,
+  "action_and_cache_rtol": 1e-06,
+  "max_observation_error": 1.7881393432617188e-07,
+  "max_binding_action_error": 0
+ },
+ "execution_provider": "CUDAExecutionProvider",
+ "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+ "upper_sha256": "2069ca94bc76598c5b297b13e57da9754b05fe1b1e19d67a1ec246708a22759a",
+ "lower_sha256": "b0681976135eed572d1d20aefc52ec65c149bdc636f2594a6436fa7136a3fc86",
+ "lower_version": "2.0_link_10500",
+ "model_config_sha256": "e8ad79d65bbe9fa030927dd7f32ef777e6ad8fea8ee825310920f438255f4e10",
+ "batch": 1,
+ "precision": "float32",
+ "fixture": "actual_scene_reset_pose_kinematics_only_no_physics_stepping",
+ "cache": "returned recurrent state; production reset at maximum context length",
+ "sanitization_components": 0,
+ "target_hardware_gate": "RTX 5090 initial round; S600 subsequent round; report GPU is actual hardware"
+}

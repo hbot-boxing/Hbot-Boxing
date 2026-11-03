@@ -1,0 +1,153 @@
+{
+ "version": 1,
+ "generated_at": "2026-11-03T19:46:57",
+ "ckpt": {
+  "path": "outputs/train/ckpt_0016.pt",
+  "sha256": "b4caf6f74988109cce7488f9b6fceece79ca28b0c6591ebcdbc2afe0bdb2bf29",
+  "param_count": 1280883,
+  "update": 16,
+  "episodes": 21,
+  "obs_dim": 1097,
+  "target_dim": 225,
+  "missing_keys": []
+ },
+ "onnx": {
+  "path": "/home/yjh/H-Bot/models/policy_v1_20261103.onnx",
+  "sha256": "2069ca94bc76598c5b297b13e57da9754b05fe1b1e19d67a1ec246708a22759a",
+  "size_bytes": 5135076,
+  "opset": 17,
+  "input": "obs[1, 1097]",
+  "output": "target_pose[1, 225]",
+  "parity_max_delta": 1.79e-07
+ },
+ "steps": [
+  {
+   "step": 1,
+   "name": "checkpoint 体检",
+   "status": "PASS",
+   "detail": "参数量 1280883，obs 1097 → target 225，第 16 次更新",
+   "evidence": ""
+  },
+  {
+   "step": 2,
+   "name": "导出 ONNX",
+   "status": "PASS",
+   "detail": "同权重已有 policy_v1_20261103.onnx，复用 v1（sha 2069ca94bc76…）",
+   "evidence": ""
+  },
+  {
+   "step": 3,
+   "name": "结构 / 大小 / 静态图",
+   "status": "PASS",
+   "detail": "5135076 字节，opset 17，obs[1, 1097] → target_pose[1, 225]",
+   "evidence": ""
+  },
+  {
+   "step": 4,
+   "name": "数值一致性",
+   "status": "PASS",
+   "detail": "64 组随机输入，max |Δ|=1.79e-07，X/Z 契约=True",
+   "evidence": ""
+  },
+  {
+   "step": 5,
+   "name": "官方镜像 --validate",
+   "status": "PASS",
+   "detail": "status=PASS size=5135076 用时 1s → validate_v1_20261103-194656.log",
+   "evidence": "validate_v1_20261103-194656.log"
+  },
+  {
+   "step": 6,
+   "name": "完整链耗时 ≤ 10ms",
+   "status": "PASS",
+   "detail": "mean=4.13ms p99=5.14ms max=5.24ms（上限 10.0ms）→ benchmark_v1.log（复用，同 upper_sha256），未重复加载",
+   "evidence": "benchmark_v1.log"
+  },
+  {
+   "step": 7,
+   "name": "本地对战 ≥ 10 局",
+   "status": "SKIP",
+   "detail": "未启用 --matches；G3-07 记为 BLOCKED",
+   "evidence": ""
+  },
+  {
+   "step": 8,
+   "name": "生成简报",
+   "status": "PASS",
+   "detail": "brief_v1.md / .json（结论 PASS（受限））",
+   "evidence": ""
+  }
+ ],
+ "gates": [
+  {
+   "gate": "G3-01",
+   "name": "ONNX 输入 obs[1,1097] float32",
+   "status": "PASS",
+   "detail": "name=obs shape=[1, 1097] elem_type=1"
+  },
+  {
+   "gate": "G3-02",
+   "name": "ONNX 输出 target_pose[1,225] float32",
+   "status": "PASS",
+   "detail": "name=target_pose shape=[1, 225] elem_type=1"
+  },
+  {
+   "gate": "G3-03",
+   "name": "文件大小 < 50,000,000 字节",
+   "status": "PASS",
+   "detail": "5135076 字节（5.14 MB，上限 50000000）"
+  },
+  {
+   "gate": "G3-08",
+   "name": "无动态轴 / 无 external data / opset ≥ 13",
+   "status": "PASS",
+   "detail": "opset=17 动态维=无 外部权重=无"
+  },
+  {
+   "gate": "G3-04",
+   "name": "PyTorch ↔ ONNX 最大误差 < 1e-4",
+   "status": "PASS",
+   "detail": "64 组随机输入，max |Δ|=1.79e-07，X/Z 契约=True"
+  },
+  {
+   "gate": "G3-05",
+   "status": "PASS",
+   "evidence": "validate_v1_20261103-194656.log",
+   "name": "官方 --validate 通过"
+  },
+  {
+   "gate": "G3-06",
+   "status": "PASS",
+   "evidence": "benchmark_v1.log（复用，同 upper_sha256）",
+   "detail": "mean=4.13ms p99=5.14ms max=5.24ms（上限 10.0ms）→ benchmark_v1.log（复用，同 upper_sha256）",
+   "name": "完整链耗时 ≤ 10ms（本地参考）"
+  },
+  {
+   "gate": "G3-07",
+   "status": "BLOCKED",
+   "evidence": "",
+   "name": "本地对战 ≥ 10 局（镜像输出）"
+  }
+ ],
+ "metrics": {
+  "mean_ms": 4.12907108,
+  "p50_ms": 4.0786435,
+  "p95_ms": 4.7629567999999995,
+  "p99_ms": 5.13552363,
+  "maximum_ms": 5.239041,
+  "fps": 242.18522292912428,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "official_threshold_ms": 5.0,
+  "official_passed": true,
+  "parity_max_observation_error": 1.7881393432617188e-07
+ },
+ "environment": {
+  "available_gb": 6.34,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "image": "horizonrobotics/holomotion:holoboxing-eval-v12-amd64",
+  "assets": "/mnt/hbotdata/tmp/HoloMotion/thirdparties/HoloMotion_assets/holoboxing",
+  "lower": "/mnt/hbotdata/tmp/HoloMotion/models/holomotion-v2"
+ },
+ "verdict": "PASS（受限）",
+ "exit_code": 2
+}
