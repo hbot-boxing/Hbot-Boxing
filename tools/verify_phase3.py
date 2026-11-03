@@ -282,6 +282,35 @@ def check_matches(onnx_path):
             f"{scope}，无 NaN、无异常倒地")
 
 
+def run_checks(onnx_path, ckpt="", samples=5, evidence=True):
+    """跑全部门禁并返回结果列表（供 `tools/accept_ckpt.py` 编排复用）。
+
+    `evidence=False` 只做纯 CPU 项（G3-01/02/03/04/08），不读取镜像证据。
+    """
+    CHECKS.clear()
+    if onnx_path is None or not Path(onnx_path).is_file():
+        for gate, name in (
+            ("G3-01", "ONNX 输入 obs[1,1097] float32"),
+            ("G3-02", "ONNX 输出 target_pose[1,225] float32"),
+            ("G3-03", "文件大小 < 50,000,000 字节"),
+            ("G3-08", "无动态轴 / 无 external data / opset ≥ 13"),
+        ):
+            add(gate, name, "BLOCKED", "models/ 下无 ONNX 文件")
+        add("G3-04", "PyTorch ↔ ONNX 最大误差 < 1e-4", "BLOCKED", "缺少 ONNX 文件")
+        return list(CHECKS)
+
+    graph = load_graph(onnx_path)
+    check_io(graph)
+    check_size(onnx_path)
+    check_static_graph(graph)
+    check_parity(onnx_path, ckpt, samples)
+    if evidence:
+        check_validate()
+        check_benchmark()
+        check_matches(onnx_path)
+    return list(CHECKS)
+
+
 def main():
     parser = argparse.ArgumentParser(description="阶段三独立检验入口")
     parser.add_argument("--onnx", default="", help="默认取 models/ 下最新的 .onnx")
@@ -292,25 +321,7 @@ def main():
     onnx_path = pick_onnx(args.onnx)
     report_deps(onnx_path, args.ckpt)
 
-    if onnx_path is None or not Path(onnx_path).is_file():
-        for gate, name in (
-            ("G3-01", "ONNX 输入 obs[1,1097] float32"),
-            ("G3-02", "ONNX 输出 target_pose[1,225] float32"),
-            ("G3-03", "文件大小 < 50,000,000 字节"),
-            ("G3-08", "无动态轴 / 无 external data / opset ≥ 13"),
-        ):
-            add(gate, name, "BLOCKED", "models/ 下无 ONNX 文件")
-        add("G3-04", "PyTorch ↔ ONNX 最大误差 < 1e-4", "BLOCKED", "缺少 ONNX 文件")
-    else:
-        graph = load_graph(onnx_path)
-        check_io(graph)
-        check_size(onnx_path)
-        check_static_graph(graph)
-        check_parity(onnx_path, args.ckpt)
-
-    check_validate()
-    check_benchmark()
-    check_matches(onnx_path)
+    run_checks(onnx_path, args.ckpt)
 
     cpu_items = [c for c in CHECKS if c["gate"] in ("G3-01", "G3-02", "G3-03", "G3-04", "G3-08")]
     cpu_ok = all(c["status"] == "PASS" for c in cpu_items)
