@@ -1,0 +1,21 @@
+# 阶段二 PPO 训练配置（官方 MuJoCo 训练环境 + 本阶段策略网络）
+num_envs: 1            # 本机显存 8GB / 内存 15GB，先单世界
+rollout_steps: 256
+updates: 16
+epochs: 4
+minibatch: 64
+gamma: 0.99
+lam: 0.95
+clip: 0.2
+lr: 3.0e-4
+lr_value: 1.0e-3
+init_std: 0.1          # target_pose 探索噪声标准差
+entropy: 1.0e-3
+seed: 42
+device: cuda:0
+save_every: 4
+eval_every: 4
+eval_episodes: 20
+assets: /mnt/hbotdata/tmp/HoloMotion/thirdparties/HoloMotion_assets/holoboxing
+lower: /mnt/hbotdata/tmp/HoloMotion/models/holomotion-v2
+output: /mnt/hbotdata/tmp/train_out
