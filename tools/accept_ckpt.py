@@ -5,11 +5,13 @@
     scripts/accept.sh outputs/train/ckpt_0016.pt
     scripts/accept.sh outputs/train/ckpt_0016.pt --version 3 --matches 10
     scripts/accept.sh outputs/train/ckpt_0016.pt --skip-validate      # 30 秒快检
+    scripts/accept.sh --onnx models/xxx.onnx                          # ONNX-only（无 .pt）
 
 八步：
     1 ckpt 体检        2 导出 ONNX        3 结构/大小/静态图   4 数值一致性
     5 镜像 --validate  6 完整链测速       7 可选本地对战        8 简报（md + json）
 
+ONNX-only 模式跳过 1/2/4（直接验收交付件），简报标注验收模式，G3-04 记 BLOCKED。
 1~4 是阻塞链：任一 FAIL 立即停止并出失败简报；5~6 是旁证，失败也照样出简报。
 退出码：0 全部通过 / 1 存在 FAIL / 2 无 FAIL 但有 BLOCKED。
 """
@@ -108,10 +110,10 @@ def docker_available():
         return False
 
 
-def run_validate(onnx_path, version, stamp):
+def run_validate(onnx_path, label, stamp):
     """第 5 步：官方镜像 --validate（不带 --benchmark，内存才够）。"""
-    out_name = f"validation_v{version}_{stamp}.json"
-    log_name = f"validate_v{version}_{stamp}.log"
+    out_name = f"validation_{label}_{stamp}.json"
+    log_name = f"validate_{label}_{stamp}.log"
     if available_gb() < MEM_VALIDATE_GB:
         step(5, "官方镜像 --validate", "BLOCKED",
              f"可用内存 {available_gb():.1f}GB < {MEM_VALIDATE_GB}GB，避免再次 OOM")
@@ -173,7 +175,7 @@ print(json.dumps(benchmark_model(sys.argv[2], assets=sys.argv[3],
 """
 
 
-def run_benchmark(onnx_path, version, stamp):
+def run_benchmark(onnx_path, label, stamp):
     """第 6 步：宿主机 venv 调官方 chain_benchmark（镜像内 --benchmark 会 OOM）。"""
     from src.export.export_onnx import file_sha256
 
@@ -224,7 +226,7 @@ def run_benchmark(onnx_path, version, stamp):
         step(6, "完整链耗时 ≤ 10ms", result["status"], result["detail"] + "，未重复加载", path.name)
         return result
 
-    log_name = f"benchmark_v{version}_{stamp}.log"
+    log_name = f"benchmark_{label}_{stamp}.log"
     if available_gb() < MEM_BENCHMARK_GB:
         step(6, "完整链耗时 ≤ 10ms", "BLOCKED",
              f"可用内存 {available_gb():.1f}GB < {MEM_BENCHMARK_GB}GB，完整链加载会 OOM")
@@ -260,7 +262,7 @@ def run_benchmark(onnx_path, version, stamp):
     return result
 
 
-def run_matches(onnx_path, version, rounds):
+def run_matches(onnx_path, label, rounds):
     """第 7 步：镜像本地对战（默认关闭；本机 16GB 内存通常 OOM）。"""
     if rounds <= 0:
         step(7, "本地对战 ≥ 10 局", "SKIP", "未启用 --matches；G3-07 记为 BLOCKED")
@@ -274,7 +276,7 @@ def run_matches(onnx_path, version, rounds):
     ours = file_sha256(onnx_path)
     built, bad = 0, []
     for index in range(1, rounds + 1):
-        target = EVAL_DIR / "match" / f"policy_v{version}_run{index:02d}"
+        target = EVAL_DIR / "match" / f"policy_{label}_run{index:02d}"
         if (target / "match.json").exists():
             built += 1
             continue
@@ -315,14 +317,20 @@ def run_matches(onnx_path, version, rounds):
     return {"gate": "G3-07", "status": "PASS", "evidence": ""}
 
 
-def write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, code):
+def write_brief(label, mode, stamp, ckpt_info, onnx_info, gates, metrics, verdict, code):
     REVIEW_DIR.mkdir(parents=True, exist_ok=True)
     steps_failed = [s for s in STEPS if s["status"] == "FAIL"]
     blocked = [s for s in STEPS if s["status"] == "BLOCKED"]
     blocked_gates = [g for g in gates if g["status"] == "BLOCKED"]
+    mode_text = (
+        "ONNX-only（直接验收交付件：跳过 ckpt 体检 / 重新导出 / 数值一致性）"
+        if mode == "ONNX-only"
+        else "torch + ONNX（含 ckpt 体检、重新导出、数值一致性）"
+    )
 
     payload = {
-        "version": version,
+        "label": label,
+        "mode": mode,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "ckpt": ckpt_info,
         "onnx": onnx_info,
@@ -339,13 +347,15 @@ def write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, c
         "verdict": verdict,
         "exit_code": code,
     }
-    json_path = REVIEW_DIR / f"brief_v{version}.json"
+    json_path = REVIEW_DIR / f"brief_{label}.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
 
     lines = [
-        f"# 验收简报 v{version}",
+        f"# 验收简报 {label}",
         "",
         f"**结论：{verdict}** ｜ 退出码 {code} ｜ {payload['generated_at']}",
+        "",
+        f"**验收模式：{mode_text}**",
         "",
         f"- checkpoint：`{ckpt_info.get('path', '—')}`（参数量 {ckpt_info.get('param_count', '—')}）",
         f"- ONNX：`{onnx_info.get('path', '—')}`",
@@ -358,8 +368,7 @@ def write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, c
         f"| 接口 | {onnx_info.get('input', '—')} → {onnx_info.get('output', '—')} |",
         f"| opset | {onnx_info.get('opset', '—')} |",
         f"| sha256 | `{onnx_info.get('sha256', '—')[:16]}…` |",
-        f"| 数值一致性 | max\\|Δ\\|={onnx_info.get('parity_max_delta', 0):.2e}"
-        f"（阈值 {PARITY_ATOL:.0e}） |",
+        f"| 数值一致性 | {onnx_info.get('parity', '—')} |",
     ]
     if metrics:
         lines += [
@@ -392,7 +401,7 @@ def write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, c
     else:
         lines.append("- 本地预检全通过，可按阶段四 Checklist 提交（平台结论以平台为准）。")
 
-    md_path = REVIEW_DIR / f"brief_v{version}.md"
+    md_path = REVIEW_DIR / f"brief_{label}.md"
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\n简报：{md_path}\n      {json_path}")
     return md_path, json_path
@@ -400,81 +409,108 @@ def write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, c
 
 def main():
     parser = argparse.ArgumentParser(description="一键验收流水线（ckpt → ONNX → 校验 → 测速 → 简报）")
-    parser.add_argument("--ckpt", required=True)
-    parser.add_argument("--version", type=int, default=0, help="默认取同权重已有版本，否则最大版本+1")
+    parser.add_argument("--ckpt", default="", help="训练产出的 .pt（torch 模式，默认）")
+    parser.add_argument(
+        "--onnx", default="",
+        help="ONNX-only 模式：直接验收交付件，跳过第 1/2/4 步（无 .pt 时使用）",
+    )
+    parser.add_argument("--version", type=int, default=0,
+                        help="ckpt 模式：版本号；默认取同权重已有版本，否则最大版本+1")
     parser.add_argument("--matches", type=int, default=0, help="本地对战局数（默认 0，即关闭）")
     parser.add_argument("--skip-validate", action="store_true", help="跳过第 5~7 步（30 秒快检）")
     parser.add_argument("--opset", type=int, default=17)
     args = parser.parse_args()
+    if bool(args.ckpt) == bool(args.onnx):
+        parser.error("必须且只能指定 --ckpt 或 --onnx 其一")
 
     import onnx
-    import torch
-
-    from src.export.export_onnx import export, file_sha256, load_policy
-    from src.models.policy import OBS_DIM, TARGET_DIM, parameter_count
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    ckpt_path = Path(args.ckpt)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1 ckpt 体检
-    if not ckpt_path.is_file():
-        step(1, "checkpoint 体检", "FAIL", f"文件不存在：{ckpt_path}")
-        raise SystemExit(1)
-    payload = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    missing = [key for key in ("policy", "neutral") if key not in payload]
-    policy = load_policy(ckpt_path)
-    ckpt_info = {
-        "path": str(ckpt_path),
-        "sha256": file_sha256(ckpt_path),
-        "param_count": parameter_count(policy),
-        "update": payload.get("update"),
-        "episodes": payload.get("episodes"),
-        "obs_dim": payload.get("obs_dim", OBS_DIM),
-        "target_dim": payload.get("target_dim", TARGET_DIM),
-        "missing_keys": missing,
-    }
-    if missing or ckpt_info["obs_dim"] != OBS_DIM or ckpt_info["target_dim"] != TARGET_DIM:
-        step(1, "checkpoint 体检", "FAIL",
-             f"缺键 {missing} / 维度 {ckpt_info['obs_dim']}→{ckpt_info['target_dim']}")
-        write_brief(args.version or 0, stamp, ckpt_info, {}, [], {}, "FAIL", 1)
-        raise SystemExit(1)
-    step(1, "checkpoint 体检", "PASS",
-         f"参数量 {ckpt_info['param_count']}，obs {OBS_DIM} → target {TARGET_DIM}，"
-         f"第 {ckpt_info['update']} 次更新")
+    if args.onnx:
+        mode = "ONNX-only"
+        onnx_path = Path(args.onnx).resolve()  # docker bind 挂载要求绝对路径
+        label = f"v{args.version}" if args.version else onnx_path.stem
+        ckpt_info = {"path": "—（ONNX-only 模式未提供 .pt）", "param_count": "—"}
+        if not onnx_path.is_file():
+            step(3, "结构 / 大小 / 静态图", "FAIL", f"文件不存在：{onnx_path}")
+            write_brief(label, mode, stamp, ckpt_info, {}, [], {}, "FAIL", 1)
+            raise SystemExit(1)
+        step(1, "checkpoint 体检", "SKIP", "ONNX-only：未提供 .pt，跳过权重体检")
+        step(2, "导出 ONNX", "SKIP", f"ONNX-only：直接验收交付件 {onnx_path.name}（未重新导出）")
+        from src.export.export_onnx import file_sha256
 
-    # 2 导出（先写临时文件，再按 sha 决定复用还是落盘）
-    temp = MODEL_DIR / f".accept_tmp_{os.getpid()}.onnx"
-    export(policy, temp, args.opset)
-    sha = file_sha256(temp)
-    same_path, same_version = version_of_same_model(sha)
-    if args.version:
-        version = args.version
-    elif same_path is not None:
-        version = same_version
+        sha = file_sha256(onnx_path)
     else:
-        version = next_version()
-    target = MODEL_DIR / f"policy_v{version}_{datetime.date.today():%Y%m%d}.onnx"
-    if target.exists() and file_sha256(target) != sha:
-        temp.unlink()
-        step(2, "导出 ONNX", "FAIL",
-             f"{target.name} 已存在且内容不同；请显式 --version 指定新版本号")
-        write_brief(version, stamp, ckpt_info, {}, [], {}, "FAIL", 1)
-        raise SystemExit(1)
-    if same_path is not None:
-        temp.unlink()
-        detail = f"同权重已有 {same_path.name}，复用 v{version}（sha {sha[:12]}…）"
-    else:
-        shutil.move(str(temp), str(target))
-        detail = f"导出 {target.name}（{target.stat().st_size} 字节，sha {sha[:12]}…）"
-    step(2, "导出 ONNX", "PASS", detail)
-    onnx_path = target if target.exists() else same_path
+        mode = "torch+ONNX"
+        import torch
+
+        from src.export.export_onnx import export, file_sha256, load_policy
+        from src.models.policy import OBS_DIM, TARGET_DIM, parameter_count
+
+        ckpt_path = Path(args.ckpt)
+        # 1 ckpt 体检
+        if not ckpt_path.is_file():
+            step(1, "checkpoint 体检", "FAIL", f"文件不存在：{ckpt_path}")
+            raise SystemExit(1)
+        payload = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        missing = [key for key in ("policy", "neutral") if key not in payload]
+        policy = load_policy(ckpt_path)
+        ckpt_info = {
+            "path": str(ckpt_path),
+            "sha256": file_sha256(ckpt_path),
+            "param_count": parameter_count(policy),
+            "update": payload.get("update"),
+            "episodes": payload.get("episodes"),
+            "obs_dim": payload.get("obs_dim", OBS_DIM),
+            "target_dim": payload.get("target_dim", TARGET_DIM),
+            "missing_keys": missing,
+        }
+        if missing or ckpt_info["obs_dim"] != OBS_DIM or ckpt_info["target_dim"] != TARGET_DIM:
+            step(1, "checkpoint 体检", "FAIL",
+                 f"缺键 {missing} / 维度 {ckpt_info['obs_dim']}→{ckpt_info['target_dim']}")
+            write_brief(f"v{args.version or 0}", mode, stamp, ckpt_info, {}, [], {}, "FAIL", 1)
+            raise SystemExit(1)
+        step(1, "checkpoint 体检", "PASS",
+             f"参数量 {ckpt_info['param_count']}，obs {OBS_DIM} → target {TARGET_DIM}，"
+             f"第 {ckpt_info['update']} 次更新")
+
+        # 2 导出（先写临时文件，再按 sha 决定复用还是落盘）
+        temp = MODEL_DIR / f".accept_tmp_{os.getpid()}.onnx"
+        export(policy, temp, args.opset)
+        sha = file_sha256(temp)
+        same_path, same_version = version_of_same_model(sha)
+        if args.version:
+            version = args.version
+        elif same_path is not None:
+            version = same_version
+        else:
+            version = next_version()
+        label = f"v{version}"
+        target = MODEL_DIR / f"policy_v{version}_{datetime.date.today():%Y%m%d}.onnx"
+        if target.exists() and file_sha256(target) != sha:
+            temp.unlink()
+            step(2, "导出 ONNX", "FAIL",
+                 f"{target.name} 已存在且内容不同；请显式 --version 指定新版本号")
+            write_brief(label, mode, stamp, ckpt_info, {}, [], {}, "FAIL", 1)
+            raise SystemExit(1)
+        if same_path is not None:
+            temp.unlink()
+            detail = f"同权重已有 {same_path.name}，复用 v{version}（sha {sha[:12]}…）"
+        else:
+            shutil.move(str(temp), str(target))
+            detail = f"导出 {target.name}（{target.stat().st_size} 字节，sha {sha[:12]}…）"
+        step(2, "导出 ONNX", "PASS", detail)
+        onnx_path = target if target.exists() else same_path
 
     # 3+4 结构、大小、静态图、数值一致性（阻塞链）
-    checks = run_checks_quiet(onnx_path, ckpt_path)
+    checks = run_checks_quiet(onnx_path, Path(args.ckpt) if args.ckpt else "")
     by_gate = {c["gate"]: c for c in checks}
     graph = onnx.load(str(onnx_path))
+    parity_detail = (by_gate.get("G3-04") or {}).get("detail", "")
+    delta = re.search(r"max \|Δ\|=([0-9.eE+-]+)", parity_detail)
     onnx_info = {
         "path": str(onnx_path),
         "sha256": sha,
@@ -482,9 +518,11 @@ def main():
         "opset": max(imp.version for imp in graph.opset_import),
         "input": f"{graph.graph.input[0].name}{[d.dim_value for d in graph.graph.input[0].type.tensor_type.shape.dim]}",
         "output": f"{graph.graph.output[0].name}{[d.dim_value for d in graph.graph.output[0].type.tensor_type.shape.dim]}",
-        "parity_max_delta": float(
-            re.search(r"max \|Δ\|=([0-9.eE+-]+)", by_gate["G3-04"]["detail"]).group(1)
-        ) if by_gate.get("G3-04") else 0.0,
+        "parity_max_delta": float(delta.group(1)) if delta else 0.0,
+        "parity": (
+            f"max\\|Δ\\|={float(delta.group(1)):.2e}（阈值 {PARITY_ATOL:.0e}）"
+            if delta else "未测（ONNX-only，无 .pt 对照）"
+        ),
     }
     structure = [by_gate[g] for g in ("G3-01", "G3-02", "G3-03", "G3-08") if g in by_gate]
     if any(c["status"] == "FAIL" for c in structure):
@@ -494,13 +532,16 @@ def main():
         step(3, "结构 / 大小 / 静态图", "PASS",
              f"{onnx_info['size_bytes']} 字节，opset {onnx_info['opset']}，"
              f"{onnx_info['input']} → {onnx_info['output']}")
-    parity = by_gate.get("G3-04", {"status": "BLOCKED", "detail": "缺失"})
-    step(4, "数值一致性", parity["status"], parity["detail"])
-    if any(c["status"] == "FAIL" for c in structure) or parity["status"] == "FAIL":
-        write_brief(version, stamp, ckpt_info, onnx_info, list(checks), {}, "FAIL", 1)
+    parity = by_gate.get("G3-04", {"gate": "G3-04", "status": "BLOCKED", "detail": "缺失"})
+    if mode == "ONNX-only":
+        step(4, "数值一致性", "SKIP", f"ONNX-only：跳过（{parity['detail']}）")
+    else:
+        step(4, "数值一致性", parity["status"], parity["detail"])
+    if any(c["status"] == "FAIL" for c in structure) or (
+        mode == "torch+ONNX" and parity["status"] == "FAIL"
+    ):
+        write_brief(label, mode, stamp, ckpt_info, onnx_info, list(checks), {}, "FAIL", 1)
         raise SystemExit(1)
-
-    # 5~7 旁证
     gates = list(checks)
     metrics = {}
     validate_gate = {"gate": "G3-05", "status": "BLOCKED", "evidence": ""}
@@ -511,10 +552,10 @@ def main():
         step(6, "完整链耗时 ≤ 10ms", "SKIP", "已跳过（--skip-validate）")
         step(7, "本地对战 ≥ 10 局", "SKIP", "已跳过（--skip-validate）")
     else:
-        validate_gate = run_validate(onnx_path, version, stamp)
-        bench_gate = run_benchmark(onnx_path, version, stamp)
+        validate_gate = run_validate(onnx_path, label, stamp)
+        bench_gate = run_benchmark(onnx_path, label, stamp)
         metrics = bench_gate.get("metrics") or {}
-        match_gate = run_matches(onnx_path, version, args.matches)
+        match_gate = run_matches(onnx_path, label, args.matches)
     for gate in (validate_gate, bench_gate, match_gate):
         gate.pop("metrics", None)
         gate.setdefault("name", {
@@ -528,8 +569,8 @@ def main():
     statuses += [g["status"] for g in gates]
     code = 1 if "FAIL" in statuses else (2 if "BLOCKED" in statuses else 0)
     verdict = "FAIL" if code == 1 else ("PASS（受限）" if code == 2 else "PASS")
-    step(8, "生成简报", "PASS", f"brief_v{version}.md / .json（结论 {verdict}）")
-    write_brief(version, stamp, ckpt_info, onnx_info, gates, metrics, verdict, code)
+    step(8, "生成简报", "PASS", f"brief_{label}.md / .json（结论 {verdict}）")
+    write_brief(label, mode, stamp, ckpt_info, onnx_info, gates, metrics, verdict, code)
     raise SystemExit(code)
 
 
