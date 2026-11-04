@@ -1,6 +1,7 @@
 {
- "version": 1,
- "generated_at": "2026-11-03T19:46:57",
+ "label": "v1",
+ "mode": "torch+ONNX",
+ "generated_at": "2026-11-03T22:34:36",
  "ckpt": {
   "path": "outputs/train/ckpt_0016.pt",
   "sha256": "b4caf6f74988109cce7488f9b6fceece79ca28b0c6591ebcdbc2afe0bdb2bf29",
@@ -18,7 +19,8 @@
   "opset": 17,
   "input": "obs[1, 1097]",
   "output": "target_pose[1, 225]",
-  "parity_max_delta": 1.79e-07
+  "parity_max_delta": 1.79e-07,
+  "parity": "max\\|Δ\\|=1.79e-07（阈值 1e-04）"
  },
  "steps": [
   {
@@ -52,22 +54,22 @@
   {
    "step": 5,
    "name": "官方镜像 --validate",
-   "status": "PASS",
-   "detail": "status=PASS size=5135076 用时 1s → validate_v1_20261103-194656.log",
-   "evidence": "validate_v1_20261103-194656.log"
+   "status": "SKIP",
+   "detail": "已跳过（--skip-validate）",
+   "evidence": ""
   },
   {
    "step": 6,
    "name": "完整链耗时 ≤ 10ms",
-   "status": "PASS",
-   "detail": "mean=4.13ms p99=5.14ms max=5.24ms（上限 10.0ms）→ benchmark_v1.log（复用，同 upper_sha256），未重复加载",
-   "evidence": "benchmark_v1.log"
+   "status": "SKIP",
+   "detail": "已跳过（--skip-validate）",
+   "evidence": ""
   },
   {
    "step": 7,
    "name": "本地对战 ≥ 10 局",
    "status": "SKIP",
-   "detail": "未启用 --matches；G3-07 记为 BLOCKED",
+   "detail": "已跳过（--skip-validate）",
    "evidence": ""
   },
   {
@@ -111,15 +113,14 @@
   },
   {
    "gate": "G3-05",
-   "status": "PASS",
-   "evidence": "validate_v1_20261103-194656.log",
+   "status": "BLOCKED",
+   "evidence": "",
    "name": "官方 --validate 通过"
   },
   {
    "gate": "G3-06",
-   "status": "PASS",
-   "evidence": "benchmark_v1.log（复用，同 upper_sha256）",
-   "detail": "mean=4.13ms p99=5.14ms max=5.24ms（上限 10.0ms）→ benchmark_v1.log（复用，同 upper_sha256）",
+   "status": "BLOCKED",
+   "evidence": "",
    "name": "完整链耗时 ≤ 10ms（本地参考）"
   },
   {
@@ -129,20 +130,9 @@
    "name": "本地对战 ≥ 10 局（镜像输出）"
   }
  ],
- "metrics": {
-  "mean_ms": 4.12907108,
-  "p50_ms": 4.0786435,
-  "p95_ms": 4.7629567999999995,
-  "p99_ms": 5.13552363,
-  "maximum_ms": 5.239041,
-  "fps": 242.18522292912428,
-  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
-  "official_threshold_ms": 5.0,
-  "official_passed": true,
-  "parity_max_observation_error": 1.7881393432617188e-07
- },
+ "metrics": {},
  "environment": {
-  "available_gb": 6.34,
+  "available_gb": 6.64,
   "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
   "image": "horizonrobotics/holomotion:holoboxing-eval-v12-amd64",
   "assets": "/mnt/hbotdata/tmp/HoloMotion/thirdparties/HoloMotion_assets/holoboxing",

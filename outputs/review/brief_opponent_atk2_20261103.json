@@ -1,0 +1,137 @@
+{
+ "label": "opponent_atk2_20261103",
+ "mode": "ONNX-only",
+ "generated_at": "2026-11-03T22:33:05",
+ "ckpt": {
+  "path": "—（ONNX-only 模式未提供 .pt）",
+  "param_count": "—"
+ },
+ "onnx": {
+  "path": "/home/yjh/H-Bot/models/opponent_atk2_20261103.onnx",
+  "sha256": "caad2aea3dc452b8dbf8ed1d3117f36927088f491a602917f0679092143ea776",
+  "size_bytes": 2359996,
+  "opset": 17,
+  "input": "obs[1, 1097]",
+  "output": "target_pose[1, 225]",
+  "parity_max_delta": 0.0,
+  "parity": "未测（ONNX-only，无 .pt 对照）"
+ },
+ "steps": [
+  {
+   "step": 1,
+   "name": "checkpoint 体检",
+   "status": "SKIP",
+   "detail": "ONNX-only：未提供 .pt，跳过权重体检",
+   "evidence": ""
+  },
+  {
+   "step": 2,
+   "name": "导出 ONNX",
+   "status": "SKIP",
+   "detail": "ONNX-only：直接验收交付件 opponent_atk2_20261103.onnx（未重新导出）",
+   "evidence": ""
+  },
+  {
+   "step": 3,
+   "name": "结构 / 大小 / 静态图",
+   "status": "PASS",
+   "detail": "2359996 字节，opset 17，obs[1, 1097] → target_pose[1, 225]",
+   "evidence": ""
+  },
+  {
+   "step": 4,
+   "name": "数值一致性",
+   "status": "SKIP",
+   "detail": "ONNX-only：跳过（未提供 checkpoint，无法做数值一致性比对）",
+   "evidence": ""
+  },
+  {
+   "step": 5,
+   "name": "官方镜像 --validate",
+   "status": "PASS",
+   "detail": "status=PASS size=2359996 用时 1s → validate_opponent_atk2_20261103_20261103-223303.log",
+   "evidence": "validate_opponent_atk2_20261103_20261103-223303.log"
+  },
+  {
+   "step": 6,
+   "name": "完整链耗时 ≤ 10ms",
+   "status": "BLOCKED",
+   "detail": "可用内存 6.7GB < 8.0GB，完整链加载会 OOM",
+   "evidence": ""
+  },
+  {
+   "step": 7,
+   "name": "本地对战 ≥ 10 局",
+   "status": "SKIP",
+   "detail": "未启用 --matches；G3-07 记为 BLOCKED",
+   "evidence": ""
+  },
+  {
+   "step": 8,
+   "name": "生成简报",
+   "status": "PASS",
+   "detail": "brief_opponent_atk2_20261103.md / .json（结论 PASS（受限））",
+   "evidence": ""
+  }
+ ],
+ "gates": [
+  {
+   "gate": "G3-01",
+   "name": "ONNX 输入 obs[1,1097] float32",
+   "status": "PASS",
+   "detail": "name=obs shape=[1, 1097] elem_type=1"
+  },
+  {
+   "gate": "G3-02",
+   "name": "ONNX 输出 target_pose[1,225] float32",
+   "status": "PASS",
+   "detail": "name=target_pose shape=[1, 225] elem_type=1"
+  },
+  {
+   "gate": "G3-03",
+   "name": "文件大小 < 50,000,000 字节",
+   "status": "PASS",
+   "detail": "2359996 字节（2.36 MB，上限 50000000）"
+  },
+  {
+   "gate": "G3-08",
+   "name": "无动态轴 / 无 external data / opset ≥ 13",
+   "status": "PASS",
+   "detail": "opset=17 动态维=无 外部权重=无"
+  },
+  {
+   "gate": "G3-04",
+   "name": "PyTorch ↔ ONNX 最大误差 < 1e-4",
+   "status": "BLOCKED",
+   "detail": "未提供 checkpoint，无法做数值一致性比对"
+  },
+  {
+   "gate": "G3-05",
+   "status": "PASS",
+   "evidence": "validate_opponent_atk2_20261103_20261103-223303.log",
+   "name": "官方 --validate 通过"
+  },
+  {
+   "gate": "G3-06",
+   "status": "BLOCKED",
+   "evidence": "",
+   "name": "完整链耗时 ≤ 10ms（本地参考）"
+  },
+  {
+   "gate": "G3-07",
+   "status": "BLOCKED",
+   "evidence": "",
+   "name": "本地对战 ≥ 10 局（镜像输出）"
+  }
+ ],
+ "metrics": {},
+ "environment": {
+  "available_gb": 6.71,
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "image": "horizonrobotics/holomotion:holoboxing-eval-v12-amd64",
+  "assets": "/mnt/hbotdata/tmp/HoloMotion/thirdparties/HoloMotion_assets/holoboxing",
+  "lower": "/mnt/hbotdata/tmp/HoloMotion/models/holomotion-v2"
+ },
+ "verdict": "PASS（受限）",
+ "exit_code": 2
+}

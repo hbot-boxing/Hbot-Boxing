@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-03T14:33:04.645542+00:00",
+  "status": "PASS",
+  "actual_fps": 0.0,
+  "qualification_mode": "local",
+  "status_scope": "local interface and runtime compatibility",
+  "format_check": {
+    "expected": "valid self-contained ONNX",
+    "status": "PASS"
+  },
+  "size_check": {
+    "expected": "strictly <50,000,000 bytes",
+    "status": "PASS",
+    "total_bytes": 2359996,
+    "limit_bytes_exclusive": 50000000
+  },
+  "contract_check": {
+    "expected": "holomotion_v2_boxing_obs1097_target_pose225_v1",
+    "status": "PASS",
+    "input_shape": [
+      1,
+      1097
+    ],
+    "output_shape": [
+      1,
+      225
+    ],
+    "history_frames": 10,
+    "frame_offsets": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "source_hashes": {
+      "reference_schema": "a7c6204f85332a384469ffd30325b03d56399e044e510cab2b0556eae1cc42c1",
+      "link_observation": "73fde837113ee92caad0065c0f684ba985d473c6713b7f6217f2f2894bde44e7",
+      "link_actor_packing": "bfb9a21cd75640e845687730e72b416a13ad24612674f3d7c71c8a63925fe4b5"
+    },
+    "output_sanitization": {
+      "nonfinite_components": 0,
+      "orientation_fallback_slots": 0
+    }
+  },
+  "execution_provider": "CUDAExecutionProvider",
+  "error_code": "",
+  "error_reason": "",
+  "lower_controller": {
+    "version": "2.0_link_10500",
+    "command_mode": "VR-5",
+    "model_path": "/opt/holoboxing/lower/exported/model_10500.onnx"
+  },
+  "chain_benchmark": {
+    "status": "NOT_RUN",
+    "reason": "Use --benchmark for full-chain performance measurement"
+  },
+  "hardware_qualification": {
+    "official_status": "NOT_EVALUATED"
+  }
+}
