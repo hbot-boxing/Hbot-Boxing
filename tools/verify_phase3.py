@@ -97,8 +97,9 @@ def check_io(graph):
         inputs = list(graph.graph.input)
         outputs = list(graph.graph.output)
         if len(inputs) != 1 or len(outputs) != 1:
-            add("G3-01", "ONNX 输入 obs[1,1097] float32", "FAIL",
-                f"输入 {len(inputs)} 个 / 输出 {len(outputs)} 个，应为单入单出")
+            detail = f"输入 {len(inputs)} 个 / 输出 {len(outputs)} 个，应为单入单出"
+            add("G3-01", "ONNX 输入 obs[1,1097] float32", "FAIL", detail)
+            add("G3-02", "ONNX 输出 target_pose[1,225] float32", "FAIL", detail)
             return
         inp, out = inputs[0], outputs[0]
         ok_in = inp.name == "obs" and dims_of(inp) == [1, 1097] and inp.type.tensor_type.elem_type == 1
@@ -282,6 +283,15 @@ def check_matches(onnx_path):
             f"{scope}，无 NaN、无异常倒地")
 
 
+CPU_GATES = (
+    ("G3-01", "ONNX 输入 obs[1,1097] float32"),
+    ("G3-02", "ONNX 输出 target_pose[1,225] float32"),
+    ("G3-03", "文件大小 < 50,000,000 字节"),
+    ("G3-08", "无动态轴 / 无 external data / opset ≥ 13"),
+    ("G3-04", "PyTorch ↔ ONNX 最大误差 < 1e-4"),
+)
+
+
 def run_checks(onnx_path, ckpt="", samples=5, evidence=True):
     """跑全部门禁并返回结果列表（供 `tools/accept_ckpt.py` 编排复用）。
 
@@ -289,21 +299,24 @@ def run_checks(onnx_path, ckpt="", samples=5, evidence=True):
     """
     CHECKS.clear()
     if onnx_path is None or not Path(onnx_path).is_file():
-        for gate, name in (
-            ("G3-01", "ONNX 输入 obs[1,1097] float32"),
-            ("G3-02", "ONNX 输出 target_pose[1,225] float32"),
-            ("G3-03", "文件大小 < 50,000,000 字节"),
-            ("G3-08", "无动态轴 / 无 external data / opset ≥ 13"),
-        ):
+        for gate, name in CPU_GATES:
             add(gate, name, "BLOCKED", "models/ 下无 ONNX 文件")
-        add("G3-04", "PyTorch ↔ ONNX 最大误差 < 1e-4", "BLOCKED", "缺少 ONNX 文件")
         return list(CHECKS)
 
-    graph = load_graph(onnx_path)
-    check_io(graph)
-    check_size(onnx_path)
-    check_static_graph(graph)
-    check_parity(onnx_path, ckpt, samples)
+    try:
+        graph = load_graph(onnx_path)
+        check_io(graph)
+        check_size(onnx_path)
+        check_static_graph(graph)
+        check_parity(onnx_path, ckpt, samples)
+    except Exception as exc:  # noqa: BLE001  坏文件必须转成 FAIL，不得裸抛 Traceback
+        reason = str(exc).splitlines()[0][:140] if str(exc) else ""
+        detail = f"无法解析 ONNX（{type(exc).__name__}）：{reason}"
+        done = {item["gate"] for item in CHECKS}
+        for gate, name in CPU_GATES:
+            if gate not in done:
+                add(gate, name, "FAIL", detail)
+        return list(CHECKS)
     if evidence:
         check_validate()
         check_benchmark()

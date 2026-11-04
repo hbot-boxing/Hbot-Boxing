@@ -508,16 +508,22 @@ def main():
     # 3+4 结构、大小、静态图、数值一致性（阻塞链）
     checks = run_checks_quiet(onnx_path, Path(args.ckpt) if args.ckpt else "")
     by_gate = {c["gate"]: c for c in checks}
-    graph = onnx.load(str(onnx_path))
+    try:
+        graph = onnx.load(str(onnx_path))
+        opset = max(imp.version for imp in graph.opset_import)
+        input_desc = f"{graph.graph.input[0].name}{[d.dim_value for d in graph.graph.input[0].type.tensor_type.shape.dim]}"
+        output_desc = f"{graph.graph.output[0].name}{[d.dim_value for d in graph.graph.output[0].type.tensor_type.shape.dim]}"
+    except Exception:  # noqa: BLE001  坏文件读不出图时不留 Traceback，交给第 3 步 FAIL
+        opset, input_desc, output_desc = "—", "—", "—"
     parity_detail = (by_gate.get("G3-04") or {}).get("detail", "")
     delta = re.search(r"max \|Δ\|=([0-9.eE+-]+)", parity_detail)
     onnx_info = {
         "path": str(onnx_path),
         "sha256": sha,
         "size_bytes": onnx_path.stat().st_size,
-        "opset": max(imp.version for imp in graph.opset_import),
-        "input": f"{graph.graph.input[0].name}{[d.dim_value for d in graph.graph.input[0].type.tensor_type.shape.dim]}",
-        "output": f"{graph.graph.output[0].name}{[d.dim_value for d in graph.graph.output[0].type.tensor_type.shape.dim]}",
+        "opset": opset,
+        "input": input_desc,
+        "output": output_desc,
         "parity_max_delta": float(delta.group(1)) if delta else 0.0,
         "parity": (
             f"max\\|Δ\\|={float(delta.group(1)):.2e}（阈值 {PARITY_ATOL:.0e}）"
