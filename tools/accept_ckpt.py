@@ -6,12 +6,17 @@
     scripts/accept.sh outputs/train/ckpt_0016.pt --version 3 --matches 10
     scripts/accept.sh outputs/train/ckpt_0016.pt --skip-validate      # 30 秒快检
     scripts/accept.sh --onnx models/xxx.onnx                          # ONNX-only（无 .pt）
+    scripts/accept.sh --onnx models/xxx.onnx \\
+        --evidence-validation validation.json --evidence-benchmark benchmark.json
+                                                                   # 引用外部官方证据（内存不足时）
 
 八步：
     1 ckpt 体检        2 导出 ONNX        3 结构/大小/静态图   4 数值一致性
     5 镜像 --validate  6 完整链测速       7 可选本地对战        8 简报（md + json）
 
 ONNX-only 模式跳过 1/2/4（直接验收交付件），简报标注验收模式，G3-04 记 BLOCKED。
+外部证据（--evidence-*）替代第 5/6 步的本地运行：validate 按大小/契约对齐，
+benchmark 必须 upper_sha256 == 交付件 sha256，对不上就记 BLOCKED、不引用。
 1~4 是阻塞链：任一 FAIL 立即停止并出失败简报；5~6 是旁证，失败也照样出简报。
 退出码：0 全部通过 / 1 存在 FAIL / 2 无 FAIL 但有 BLOCKED。
 """
@@ -108,6 +113,75 @@ def docker_available():
         return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True).returncode == 0
     except Exception:  # noqa: BLE001
         return False
+
+
+def evidence_validation(path, sha, size):
+    """第 5 步备选：引用外部官方 validate 产物（按大小与契约对齐交付件）。"""
+    name = Path(path).name
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        step(5, "官方镜像 --validate", "BLOCKED", f"外部证据无法解析（{name}）：{exc}")
+        return {"gate": "G3-05", "status": "BLOCKED", "evidence": ""}
+    if payload.get("status") != "PASS":
+        step(5, "官方镜像 --validate", "FAIL", f"外部证据 status={payload.get('status')} → {name}", name)
+        return {"gate": "G3-05", "status": "FAIL", "evidence": name}
+    total = (payload.get("size_check") or {}).get("total_bytes")
+    contract = payload.get("contract_check") or {}
+    shapes_ok = (
+        contract.get("input_shape") == [1, 1097]
+        and contract.get("output_shape") == [1, 225]
+        and contract.get("status") == "PASS"
+    )
+    upper = payload.get("upper_sha256")
+    if total != size or not shapes_ok or (upper and upper != sha):
+        step(5, "官方镜像 --validate", "BLOCKED",
+             f"外部证据与交付件对不上：size {total} vs {size}，契约 {'PASS' if shapes_ok else 'FAIL'}，"
+             f"upper_sha256 {str(upper)[:12]}… vs {sha[:12]}…（{name}）")
+        return {"gate": "G3-05", "status": "BLOCKED", "evidence": ""}
+    step(5, "官方镜像 --validate", "PASS",
+         f"status=PASS size={total}（外部证据 {name}，按大小/契约对齐）", name)
+    return {"gate": "G3-05", "status": "PASS", "evidence": name}
+
+
+def evidence_benchmark(path, sha):
+    """第 6 步备选：引用外部官方 benchmark 产物，必须 upper_sha256 与交付件一致。"""
+    name = Path(path).name
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        step(6, "完整链耗时 ≤ 10ms", "BLOCKED", f"外部证据无法解析（{name}）：{exc}")
+        return {"gate": "G3-06", "status": "BLOCKED", "evidence": "", "metrics": {}}
+    bench = payload.get("chain_benchmark") or payload
+    if bench.get("upper_sha256") != sha:
+        step(6, "完整链耗时 ≤ 10ms", "BLOCKED",
+             f"证据 upper_sha256={str(bench.get('upper_sha256'))[:12]}… ≠ 交付件 {sha[:12]}…，拒绝引用")
+        return {"gate": "G3-06", "status": "BLOCKED", "evidence": "", "metrics": {}}
+    mean = float(bench.get("mean_ms") or 0.0)
+    metrics = {
+        "mean_ms": mean,
+        "p50_ms": bench.get("p50_ms"),
+        "p95_ms": bench.get("p95_ms"),
+        "p99_ms": bench.get("p99_ms"),
+        "maximum_ms": bench.get("maximum_ms"),
+        "fps": bench.get("fps"),
+        "gpu": bench.get("gpu"),
+        "official_threshold_ms": bench.get("threshold_ms"),
+        "official_passed": bench.get("passed"),
+        "target_hardware_match": bench.get("target_hardware_match"),
+        "parity_max_observation_error": (bench.get("parity_preflight") or {}).get(
+            "max_observation_error"
+        ),
+    }
+    ok = (
+        bool(bench.get("timing_completed"))
+        and bool(bench.get("passed"))
+        and mean <= BENCH_LIMIT_MS
+    )
+    step(6, "完整链耗时 ≤ 10ms", "PASS" if ok else "FAIL",
+         f"mean={mean:.2f}ms p99={float(bench.get('p99_ms') or 0):.2f}ms"
+         f"（外部证据 {name}，sha 已对齐；目标硬件匹配 {bench.get('target_hardware_match')}）", name)
+    return {"gate": "G3-06", "status": "PASS" if ok else "FAIL", "evidence": name, "metrics": metrics}
 
 
 def run_validate(onnx_path, label, stamp):
@@ -370,6 +444,8 @@ def write_brief(label, mode, stamp, ckpt_info, onnx_info, gates, metrics, verdic
         f"| sha256 | `{onnx_info.get('sha256', '—')[:16]}…` |",
         f"| 数值一致性 | {onnx_info.get('parity', '—')} |",
     ]
+    if onnx_info.get("evidence"):
+        lines.append(f"| 外部证据 | {', '.join(onnx_info['evidence'])}（已按 sha/大小对齐） |")
     if metrics:
         lines += [
             f"| 完整链耗时 | mean {metrics['mean_ms']:.2f}ms"
@@ -418,6 +494,10 @@ def main():
                         help="ckpt 模式：版本号；默认取同权重已有版本，否则最大版本+1")
     parser.add_argument("--matches", type=int, default=0, help="本地对战局数（默认 0，即关闭）")
     parser.add_argument("--skip-validate", action="store_true", help="跳过第 5~7 步（30 秒快检）")
+    parser.add_argument("--evidence-validation", default="",
+                        help="外部官方 validate 产物（JSON），按大小/契约对齐后引用第 5 步")
+    parser.add_argument("--evidence-benchmark", default="",
+                        help="外部官方 benchmark 产物（JSON），按 upper_sha256 对齐后引用第 6 步")
     parser.add_argument("--opset", type=int, default=17)
     args = parser.parse_args()
     if bool(args.ckpt) == bool(args.onnx):
@@ -558,10 +638,21 @@ def main():
         step(6, "完整链耗时 ≤ 10ms", "SKIP", "已跳过（--skip-validate）")
         step(7, "本地对战 ≥ 10 局", "SKIP", "已跳过（--skip-validate）")
     else:
-        validate_gate = run_validate(onnx_path, label, stamp)
-        bench_gate = run_benchmark(onnx_path, label, stamp)
+        if args.evidence_validation:
+            validate_gate = evidence_validation(
+                args.evidence_validation, sha, onnx_info["size_bytes"]
+            )
+        else:
+            validate_gate = run_validate(onnx_path, label, stamp)
+        if args.evidence_benchmark:
+            bench_gate = evidence_benchmark(args.evidence_benchmark, sha)
+        else:
+            bench_gate = run_benchmark(onnx_path, label, stamp)
         metrics = bench_gate.get("metrics") or {}
         match_gate = run_matches(onnx_path, label, args.matches)
+    evidence = [Path(p).name for p in (args.evidence_validation, args.evidence_benchmark) if p]
+    if evidence:
+        onnx_info["evidence"] = evidence
     for gate in (validate_gate, bench_gate, match_gate):
         gate.pop("metrics", None)
         gate.setdefault("name", {

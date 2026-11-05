@@ -6,8 +6,10 @@
 #   scripts/launch_all.sh models/policy_v1_20261103.onnx --skip-validate
 #   scripts/launch_all.sh models/xxx.onnx --match-json /tmp/atk2/atk2-full/match.json
 #
-# 参数：<model.onnx> 必填；--match-json <json> 只在本脚本消费；--skip-validate / --matches N /
-#       --version N / --opset N 透传给 accept.sh（白名单，避免 --match-json 被误传成 --matches）。
+# 参数：<model.onnx> 必填；--match-json <json>（可重复，多局走汇总报告）只在本脚本消费；
+#       --skip-validate / --matches N / --version N / --opset N /
+#       --evidence-validation <json> --evidence-benchmark <json> 透传给 accept.sh（白名单，
+#       避免 --match-json 被误传成 --matches）。
 #
 # 退出码：0 全绿 / 1 验收或对战体检 FAIL / 2 无 FAIL 但有 BLOCKED 或算子警告。
 #
@@ -22,8 +24,9 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 usage() {
   cat <<'EOF'
-用法：scripts/launch_all.sh <model.onnx> [--match-json <match.json>] [--skip-validate]
+用法：scripts/launch_all.sh <model.onnx> [--match-json <match.json> ...] [--skip-validate]
                             [--matches N] [--version N] [--opset N]
+                            [--evidence-validation <json>] [--evidence-benchmark <json>]
 EOF
 }
 
@@ -80,22 +83,21 @@ if [[ -z "$MODEL" || "$MODEL" == --* ]]; then
 fi
 shift
 
-MATCH_JSON=""
+MATCH_JSONS=()
 VERSION=""
 PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --match-json)
-      MATCH_JSON="${2:-}"
-      [[ -n "$MATCH_JSON" ]] || { echo "[FAIL] --match-json 缺少路径"; exit 1; }
-      shift 2 ;;
+      [[ -n "${2:-}" ]] || { echo "[FAIL] --match-json 缺少路径"; exit 1; }
+      MATCH_JSONS+=("$2"); shift 2 ;;
     --skip-validate)
       PASSTHRU+=("$1"); shift ;;
     --version)
       VERSION="${2:-}"
       [[ -n "$VERSION" ]] || { echo "[FAIL] --version 缺少值"; exit 1; }
       PASSTHRU+=("--version" "$VERSION"); shift 2 ;;
-    --matches|--opset)
+    --matches|--opset|--evidence-validation|--evidence-benchmark)
       [[ -n "${2:-}" ]] || { echo "[FAIL] $1 缺少值"; exit 1; }
       PASSTHRU+=("$1" "$2"); shift 2 ;;
     *)
@@ -151,13 +153,25 @@ else
   status2="PASS"
 fi
 
-# 3 对战体检（仅在给了 --match-json 时）
+# 3 对战体检（仅在给了 --match-json 时；多个文件走多局汇总）
 status3="SKIP"; note3="未提供 --match-json"
-if [[ -n "$MATCH_JSON" ]]; then
+if [[ ${#MATCH_JSONS[@]} -gt 0 ]]; then
   echo
-  echo "[3/3] 对战体检：tools/analyze_match.py"
-  if [[ -f "$MATCH_JSON" ]]; then
-    match_out="$("$PY" "$ROOT/tools/analyze_match.py" --input "$MATCH_JSON" --label "${LABEL}-match")"
+  echo "[3/3] 对战体检：tools/analyze_match.py（${#MATCH_JSONS[@]} 局）"
+  EXISTING=()
+  for path in "${MATCH_JSONS[@]}"; do
+    if [[ -f "$path" ]]; then
+      EXISTING+=("$path")
+    else
+      echo "[WARN] --match-json 文件不存在，已跳过：$path"
+      note3="有文件不存在，已跳过"
+    fi
+  done
+  if [[ ${#EXISTING[@]} -eq 0 ]]; then
+    echo "[WARN] 无可用 match.json，第 3 步记 SKIP"
+    note3="无可用 match.json"
+  else
+    match_out="$("$PY" "$ROOT/tools/analyze_match.py" --input "${EXISTING[@]}" --label "${LABEL}-match")"
     rc3=$?
     printf '%s\n' "$match_out"
     note3="$(printf '%s\n' "$match_out" | head -1)"
@@ -170,9 +184,6 @@ if [[ -n "$MATCH_JSON" ]]; then
     else
       status3="PASS"
     fi
-  else
-    note3="--match-json 文件不存在：$MATCH_JSON"
-    echo "[WARN] $note3"
   fi
 fi
 
