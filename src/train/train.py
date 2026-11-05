@@ -42,6 +42,7 @@ DEFAULTS = {
     "lower": "",
     "eval_every": 4,
     "eval_episodes": 20,
+    "mirror_prob": 0.5,
 }
 
 
@@ -56,6 +57,76 @@ def load_config(path):
     config = dict(DEFAULTS)
     config.update(data or {})
     return config
+
+
+KEYPART_SWAP = (0, 2, 1, 4, 3)  # 骨盆、右腕、左腕、右踝、左踝
+FRAMES = 10
+FRAME_DIM = 108
+OPPONENT_OFFSET = 1080
+
+
+def _pose_mirror_tables(steps, slots=5, dim=9):
+    """位姿段（5 槽 × 9 分量）的镜像索引与符号：交换左右槽，翻转 Y 分量。"""
+    idx = torch.arange(steps * slots * dim)
+    sgn = torch.ones_like(idx, dtype=torch.float32)
+    for t in range(steps):
+        for k in range(slots):
+            for c in range(dim):
+                src = (t * slots + KEYPART_SWAP[k]) * dim + c
+                dst = (t * slots + k) * dim + c
+                idx[dst] = src
+                sgn[dst] = -1.0 if c in (1, 4, 7) else 1.0
+    return idx, sgn
+
+
+def _obs_mirror_tables():
+    """obs[1097] 的镜像索引与符号（依据官方航向/骨盆坐标系，横向分量为 Y）。"""
+    idx = torch.arange(OBS_DIM)
+    sgn = torch.ones(OBS_DIM)
+    for f in range(FRAMES):
+        base = f * FRAME_DIM
+        sgn[base + 0] = -1.0  # 骨盆角速度是轴向量：(x,y,z) → (-x,+y,-z)
+        sgn[base + 2] = -1.0
+        for block in (3, 63):  # 当前位姿 / 上一刻位姿
+            for k in range(5):
+                for c in range(9):
+                    src = base + block + 9 * k + c
+                    dst = base + block + 9 * KEYPART_SWAP[k] + c
+                    idx[dst] = src
+                    sgn[dst] = -1.0 if c in (1, 4, 7) else 1.0
+        for k in range(5):  # 线速度
+            for c in range(3):
+                src = base + 48 + 3 * k + c
+                dst = base + 48 + 3 * KEYPART_SWAP[k] + c
+                idx[dst] = src
+                sgn[dst] = -1.0 if c == 1 else 1.0
+    for k in range(5):  # 对方 5 个关键部位位置
+        for c in range(3):
+            src = OPPONENT_OFFSET + 3 * k + c
+            dst = OPPONENT_OFFSET + 3 * KEYPART_SWAP[k] + c
+            idx[dst] = src
+            sgn[dst] = -1.0 if c == 1 else 1.0
+    return idx, sgn
+
+
+class Mirror:
+    """左右镜像采样：观测按固定符号/置换翻转，动作按同一规则翻转（对合）。"""
+
+    def __init__(self, device):
+        self.obs_idx, obs_sgn = _obs_mirror_tables()
+        self.act_idx, act_sgn = _pose_mirror_tables(steps=5)
+        self.obs_idx = self.obs_idx.to(device)
+        self.obs_sgn = obs_sgn.to(device)
+        self.act_idx = self.act_idx.to(device)
+        self.act_sgn = act_sgn.to(device)
+
+    def obs(self, obs, mask):
+        flipped = obs[:, self.obs_idx] * self.obs_sgn
+        return torch.where(mask[:, None], flipped, obs)
+
+    def action(self, action, mask):
+        flipped = action[:, self.act_idx] * self.act_sgn
+        return torch.where(mask[:, None], flipped, action)
 
 
 def build_env(config):
@@ -204,6 +275,7 @@ def train(config):
     torch.manual_seed(int(config["seed"]))
     env, paths = build_env(config)
     learner = PPO(config)
+    mirror = Mirror(learner.device)
     from holoboxing.training.resources import load_neutral_reference
 
     reference = load_neutral_reference(paths["lower_onnx"], paths["arena_scene"])
@@ -230,19 +302,24 @@ def train(config):
         ep_return = torch.zeros(obs.shape[0], device=learner.device)
         fallen_count = 0
         for _ in range(int(config["rollout_steps"])):
+            mask = torch.rand(obs.shape[0], device=learner.device) < float(
+                config["mirror_prob"]
+            )
+            obs_in = mirror.obs(obs, mask)
             with torch.no_grad():
-                action, logp, _entropy = learner.act(obs)
-                value = learner.value(obs)
+                action_in, logp, _entropy = learner.act(obs_in)
+                value = learner.value(obs_in)
+                action = mirror.action(action_in, mask)
             actions = {
                 AGENT: action,
                 OPPONENT: torch.zeros_like(action),
             }
             next_observations, task_rewards, done, _ = env.step(actions)
-            reward = learner.reward.combine(task_rewards[AGENT])
+            reward = learner.reward.combine(task_rewards[AGENT], env=env, done=done)
             fallen = env.metrics.get(AGENT, {}).get("fallen")
             fallen_count += int(fallen.sum()) if fallen is not None else 0
             for key, value_ in (
-                ("obs", obs), ("action", action), ("logp", logp),
+                ("obs", obs_in), ("action", action_in), ("logp", logp),
                 ("reward", reward), ("done", done), ("value", value),
             ):
                 rollout[key].append(value_)
