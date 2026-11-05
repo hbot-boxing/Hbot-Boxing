@@ -1,0 +1,2 @@
+version,date,sha256,size_bytes,mean_ms,validate,upload_time,attempt_no,platform_status,failure_reason,elo,replay_path
+atk6_v3,2026-11-05,82d5fb554a3b7c32fcc4b0acb6a85748647734989d746a426df529cd1a5aa53f,2341146,5.36,PASS,,,,,,
